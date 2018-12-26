@@ -11,7 +11,10 @@ import time
 import pandas as pd
 import json
 
+from pandas.tseries.offsets import BDay
+
 from config import mod_config
+
 
 instList = [{
     "xchg": "SHFE",
@@ -52,30 +55,46 @@ def hxRecords(url,variety):
         
         re.append(res)
         
-    find_top_shape(cal_macd(re,variety))
+    find_top_shape(cal_macd(re,variety),variety)
 
-def cmp_date(date):
-    start_time = '20181219210000'
+def cmp_date(variety,date):
+    start_time = mod_config.get_config(variety,"start_time")
     s_time = time.mktime(time.strptime(start_time,'%Y%m%d%H%M%S'))*1000
     return date >= s_time
 
-def cal_macd(data, variety):
-    start_time = '20181219210000'
+def cmp_date_grater(variety,date):
+    start_time = mod_config.get_config(variety,"start_time")
     s_time = time.mktime(time.strptime(start_time,'%Y%m%d%H%M%S'))*1000
+    return date > s_time
+
+def cal_macd(data, variety):
+    start_time = mod_config.get_config(variety,"start_time")
+    work_day = int(mod_config.get_config("global","work_day"))
+    date = (pd.datetime.today() - BDay(work_day)).strftime('%Y%m%d')   
+    s_time = time.mktime(time.strptime(date,'%Y%m%d'))*1000
+    need_reset = False
+    if cmp_date_grater(variety,s_time):
+        new_start = s_time + 21*60*60*1000
+        need_reset = True
     ema_12,ema_26,dea = cal_ema(variety)
     diff = ema_12 - ema_26
     for i in data:
-        if cmp_date(i['Time']) == False:
-            continue
-        
-        if i['Time'] > s_time:
+        if cmp_date(variety,i['Time']) == False:
+            continue       
+        if cmp_date_grater(variety,i['Time']):
             ema_12 = ema_12 * (11 / 13.0) + i['Close'] * (2 / 13.0)
             ema_26 = ema_26 * (25 / 27.0) + i['Close'] * (2 / 27.0)
             diff = ema_12 - ema_26
             dea = dea * (8/10.0) + diff * (2/10.0)
+            if need_reset and i['Time'] == new_start:
+                need_reset = False
+                mod_config.set_config(variety,"ema_12",str(ema_12))
+                mod_config.set_config(variety,"ema_26",str(ema_26))
+                mod_config.set_config(variety,"dea",str(dea))
+                mod_config.set_config(variety,"start_time",time.strftime('%Y%m%d%H%M%S',time.localtime(new_start/1000)))
+                               
         i.update(Dif = diff)
         i.update(Dea = dea)
-        #print(i['Dif'])
 
     return data
         
@@ -93,7 +112,7 @@ def cal_ema(variety):
         mod_config.set_config(variety,"ema_26",str(ema_26))
     return float(ema_12),float(ema_26),dea
 
-def find_top_shape(data):
+def find_top_shape(data,variety):
     first_k = data[0];
     sec_k = data[1] 
     flag = 0;
@@ -104,8 +123,7 @@ def find_top_shape(data):
     is_top = True;
     last_k = first_k
     top_list = []
-    start_time = '20181219210000'
-    s_time = time.mktime(time.strptime(start_time,'%Y%m%d%H%M%S'))*1000
+
     for i in range(2,len(data)):
         if (sec_k['High'] >= data[i]['High'] and sec_k['Low'] <= data[i]['Low']) or (sec_k['High'] <= data[i]['High'] and sec_k['Low'] >= data[i]['Low']):
             sec_k['Time'] = data[i]['Time']
@@ -146,7 +164,7 @@ def find_top_shape(data):
             flag = 0
             
     for i in range(len(top_list)):
-        if i > 2 and cmp_date(top_list[i - 2]['Time']):
+        if i > 2 and cmp_date(variety,top_list[i - 2]['Time']):
             if top_list[i]['is_top'] and top_list[i]['High'] > top_list[i-2]['High'] and max(top_list[i]['Dif'], top_list[i]['Dea']) < max(top_list[i-2]['Dif'], top_list[i-2]['Dea']):
                 print('--top--')
                 print(time.localtime(top_list[i]['Time']/1000))
