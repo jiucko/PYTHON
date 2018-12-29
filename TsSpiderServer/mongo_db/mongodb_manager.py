@@ -49,4 +49,7 @@ class DBManager:
         return self.table.find({},{"code":1},no_cursor_timeout=True)
         
     def find_one_by_key(self, request={}):
-        return self.table.find_one(request)    
+        return self.table.find_one(request)   
+    
+    def find_by_key(self, request=[]):
+        return self.table.find(request)
